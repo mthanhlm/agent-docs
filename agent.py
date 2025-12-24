@@ -79,41 +79,38 @@ class Agent:
             model_message = response.choices[0].message
             
             assistant_message = {"role": "assistant", "content": model_message.content or ""}
+            
+            # If there are tool calls, handle only the first one
             if model_message.tool_calls:
+                tool_call = model_message.tool_calls[0]
                 assistant_message["tool_calls"] = [
                     {
                         "id": tool_call.id, 
                         "type": "function", 
                         "function": {"name": tool_call.function.name, "arguments": tool_call.function.arguments}
-                    } for tool_call in model_message.tool_calls
+                    }
                 ]
-            
-            # Append to context
-            messages.append(assistant_message)
-            if self.memory:
-                self.memory.add_message(assistant_message)
+                
+                # Append assistant message with tool_calls to context
+                messages.append(assistant_message)
+                if self.memory:
+                    self.memory.add_message(assistant_message)
 
-            if self.debug:
-                if model_message.content:
-                    logger.info(f"Thought: {model_message.content}")
-                if model_message.tool_calls:
-                    for tool_call in model_message.tool_calls:
-                        logger.info(f"Action: {tool_call.function.name}({tool_call.function.arguments})")
-
-            # If no tool calls, model has decided it's finished
-            if not model_message.tool_calls:
                 if self.debug:
-                    logger.info(f"Final Answer: {model_message.content}")
-                return model_message.content
+                    if model_message.content:
+                        logger.info(f"Thought: {model_message.content}")
+                    logger.info(f"Action: {tool_call.function.name}({tool_call.function.arguments})")
 
-            # [TOOL] Execute tool(s)
-            for tool_call in model_message.tool_calls:
+                # [TOOL] Execute the selected tool
                 selected_function = self.tools_map.get(tool_call.function.name)
                 if not selected_function:
                     result = f"Error: Tool '{tool_call.function.name}' not found."
                 else:
-                    arguments = json.loads(tool_call.function.arguments)
-                    result = selected_function(**arguments)
+                    try:
+                        arguments = json.loads(tool_call.function.arguments)
+                        result = selected_function(**arguments)
+                    except Exception as e:
+                        result = f"Error executing tool: {str(e)}"
                 
                 if self.debug:
                     logger.info(f"Perception: {result}")
@@ -129,6 +126,19 @@ class Agent:
                 messages.append(tool_message)
                 if self.memory:
                     self.memory.add_message(tool_message)
+                
+                # Continue the while loop to let the model process the tool result
+                continue
+
+            # If no tool calls, model has decided it's finished
+            messages.append(assistant_message)
+            if self.memory:
+                self.memory.add_message(assistant_message)
+                
+            if self.debug:
+                logger.info(f"Final Answer: {model_message.content}")
+            
+            return model_message.content
 
 
 if __name__ == "__main__":
