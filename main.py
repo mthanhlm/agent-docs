@@ -13,18 +13,6 @@ def main():
     )
 
     print("--- Interactive Chat Mode (Type 'exit' or 'quit' to stop) ---")
-    
-    # Old test query for reference:
-    """
-    user_query = (
-        "1. What is the current temperature in Da Lat right now? "
-        "2. Search for the average annual temperature in Da Lat. "
-        "3. Calculate the difference between the current temperature and that average annual temperature."
-        "4. Provide the final answer in English and short all results of each step."
-    )
-    response = agent.chat(user_query)
-    print(f"\nFinal Answer:\n\n {response}")
-    """
 
     while True:
         try:
