@@ -8,8 +8,11 @@ load_dotenv()
 
 def web_search(query: str):
     """
-    Search for up-to-date information on the web. 
-    This tool returns a comprehensive summary of search results.
+    Search for up-to-date information on the web.
+    This tool returns a comprehensive summary of search results including titles, snippets, and source URLs.
+
+    Args:
+        query (str): The search query to look up on the internet.
     """
     api_key = os.getenv("TAVILY_API_KEY")
     if not api_key:
@@ -43,6 +46,10 @@ def web_search(query: str):
 def get_current_weather(location: str):
     """
     Get the current weather information for a specified location.
+    The tool first resolves the location to coordinates and then fetches real-time weather data.
+
+    Args:
+        location (str): The name of the city or location to get weather for.
     """
     try:
         geocode_url = f"https://geocoding-api.open-meteo.com/v1/search?name={quote(location)}&count=1"
@@ -66,7 +73,11 @@ def get_current_weather(location: str):
 
 def calculator(expression: str):
     """
-    Evaluate a mathematical expression.
+    Evaluate a mathematical expression safely.
+    Supports basic arithmetic operations: addition (+), subtraction (-), multiplication (*), division (/), and parentheses.
+
+    Args:
+        expression (str): The mathematical expression to evaluate (e.g., "2 * (3 + 4)").
     """
     try:
         valid_chars = "0123456789+-*/(). "
