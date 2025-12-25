@@ -71,6 +71,7 @@ def get_current_weather(location: str):
     except Exception as e:
         return f"Error: {str(e)}"
 
+
 def calculator(expression: str):
     """
     Evaluate a mathematical expression safely.
