@@ -7,10 +7,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from rag import RAGSystem
+
 logger = logging.getLogger(__name__)
 
 class Agent:
-    def __init__(self, tools=None, system_prompt="You are a helpful assistant.", debug=False, memory=None):
+    def __init__(self, tools=None, system_prompt="You are a helpful assistant.", debug=False, memory=None, rag: RAGSystem = None):
         self.client = OpenAI(
             base_url=os.getenv("BASE_URL"),
             api_key=os.getenv("GROQ_API_KEY")
@@ -18,6 +20,7 @@ class Agent:
         self.model = os.getenv("MODEL_NAME", "gpt-4o")
         self.tools_map = {tool.__name__: tool for tool in (tools or [])}
         self.memory = memory
+        self.rag = rag
         self.system_prompt = system_prompt
         self.tool_schemas = self.get_tool_schemas()
         self.debug = debug
@@ -59,7 +62,15 @@ class Agent:
             messages = [{"role": "system", "content": self.system_prompt}]
         
         if user_input:
-            user_message = {"role": "user", "content": str(user_input)}
+            content = str(user_input)
+            if self.rag:
+                rag_context = self.rag.query(content)
+                if rag_context:
+                    if self.debug:
+                        logger.info(f"--- RAG CONTEXT RETRIEVED ---\n{rag_context}\n---------------------------")
+                    content = f"Context from knowledge base:\n{rag_context}\n\nUser query: {user_input}"
+            
+            user_message = {"role": "user", "content": content}
             messages.append(user_message)
             if self.memory:
                 self.memory.add_message(user_message)
@@ -150,22 +161,37 @@ if __name__ == "__main__":
 
     from tools import web_search, get_current_weather, calculator
     from memory import ShortTermMemory
+    from rag import RAGSystem
 
     memory = ShortTermMemory(max_messages=10)
+    
+    # Khởi tạo RAG với top_k=2 và XÓA tri thức cũ
+    rag = RAGSystem(threshold=0.5, top_k=1, clear_history=True)
+    
+    # Nạp kiến thức cố định vào Knowledge Base
+    kb_data = [
+        "Historical data shows that the average annual temperature in Da Lat is exactly 18.0 degrees Celsius.",
+        "The highest recorded temperature in Da Lat's history was 31.5 degrees Celsius.",
+        "Da Lat is famous for Arabica coffee, which requires temperatures between 15-24 degrees Celsius to grow well."
+    ]
+    rag.add_knowledge(kb_data)
 
     agent = Agent(
         tools=[web_search, get_current_weather, calculator], 
-        system_prompt="You are a helpful AI assistant. Always respond in English. Use tools to verify data.",
+        system_prompt="You are a helpful AI assistant. Always use context from Knowledge Base (RAG) and available tools to answer precisely. Answer in short all needed information",
         debug=True,
-        memory=memory
+        memory=memory,
+        rag=rag
     )
 
+    # Câu hỏi yêu cầu dùng: RAG + Weather Tool + Calculator + Search Tool
     user_query = (
-        "1. What is the current temperature in Da Lat right now? "
-        "2. Search for the average annual temperature in Da Lat. "
-        "3. Calculate the difference between the current temperature and that average annual temperature."
-        "4. Provide the final answer in English and short all results of each step."
+        "Based on the knowledge base, what is the historical average temperature in Da Lat? "
+        "Now, use a tool to get the current real-time temperature in Da Lat. "
+        "Then, use the calculator to find the difference between the current temperature and the historical average. "
+        "Finally, search for one interesting fact about Da Lat's flower festival."
     )
+    
     response = agent.chat(user_query)
     print(f"\nFinal Answer:\n\n {response}")    
 
