@@ -80,16 +80,20 @@ class SimpleVectorStore:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
     def load_from_json(self):
-        """Khôi phục tri thức từ file JSON."""
-        if os.path.exists(self.storage_path):
-            try:
-                with open(self.storage_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    self.documents = [Document(d["content"], d["metadata"]) for d in data["documents"]]
-                    self.vectors = [np.array(v) for v in data["vectors"]]
-                logger.info(f"RAG: Loaded {len(self.documents)} documents from {self.storage_path}")
-            except Exception as e:
-                logger.error(f"RAG: Error loading JSON: {e}")
+        """Khôi phục tri thức từ file JSON. Nếu chưa có thì tạo mới."""
+        if not os.path.exists(self.storage_path):
+            logger.info(f"RAG: {self.storage_path} not found. Initializing new storage.")
+            self.save_to_json()
+            return
+
+        try:
+            with open(self.storage_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                self.documents = [Document(d["content"], d["metadata"]) for d in data["documents"]]
+                self.vectors = [np.array(v) for v in data["vectors"]]
+            logger.info(f"RAG: Loaded {len(self.documents)} documents from {self.storage_path}")
+        except Exception as e:
+            logger.error(f"RAG: Error loading JSON: {e}")
 
 class RAGSystem:
     """Hệ thống RAG chính kết hợp tất cả các thành phần."""
