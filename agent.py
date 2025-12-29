@@ -2,6 +2,7 @@ import inspect
 import json
 import logging
 import os
+from typing import Optional
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -12,7 +13,7 @@ from rag import RAGSystem
 logger = logging.getLogger(__name__)
 
 class Agent:
-    def __init__(self, tools=None, system_prompt="You are a helpful assistant.", debug=False, memory=None, rag: RAGSystem = None):
+    def __init__(self, tools=None, system_prompt="You are a helpful assistant.", debug=False, memory=None, rag: Optional[RAGSystem] = None):
         self.client = OpenAI(
             base_url=os.getenv("BASE_URL"),
             api_key=os.getenv("GROQ_API_KEY")
@@ -158,6 +159,12 @@ if __name__ == "__main__":
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
+    # Nạp kiến thức cố định vào Knowledge Base
+    kb_data = [
+        "Historical data shows that the average annual temperature in Da Lat is exactly 18.0 degrees Celsius.",
+        "The highest recorded temperature in Da Lat's history was 31.5 degrees Celsius.",
+        "Da Lat is famous for Arabica coffee, which requires temperatures between 15-24 degrees Celsius to grow well."
+    ]
 
     from tools import web_search, get_current_weather, calculator
     from memory import ShortTermMemory
@@ -165,15 +172,9 @@ if __name__ == "__main__":
 
     memory = ShortTermMemory(max_messages=10)
     
-    # Khởi tạo RAG với top_k=2 và XÓA tri thức cũ
     rag = RAGSystem(threshold=0.5, top_k=1, clear_history=True)
     
-    # Nạp kiến thức cố định vào Knowledge Base
-    kb_data = [
-        "Historical data shows that the average annual temperature in Da Lat is exactly 18.0 degrees Celsius.",
-        "The highest recorded temperature in Da Lat's history was 31.5 degrees Celsius.",
-        "Da Lat is famous for Arabica coffee, which requires temperatures between 15-24 degrees Celsius to grow well."
-    ]
+
     rag.add_knowledge(kb_data)
 
     agent = Agent(

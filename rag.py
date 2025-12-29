@@ -18,7 +18,7 @@ class Document:
         return {"content": self.content, "metadata": self.metadata}
 
 class RecursiveCharacterTextSplitter:
-    """Chia nhỏ văn bản sử dụng tiktoken để tính toán độ dài."""
+
     def __init__(self, chunk_size: int = 500, chunk_overlap: int = 50):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap

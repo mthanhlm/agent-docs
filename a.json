@@ -1,0 +1,17 @@
+content='{
+    "messages": [
+        {
+            "role": "user",
+            "content": "what is the weather in sf"
+        }
+    ],
+    "next_agent": "weather_agent"
+}' additional_kwargs={'parsed': None, 'refusal': None
+} response_metadata={'token_usage': {'completion_tokens': 177, 'prompt_tokens': 263, 'total_tokens': 440, 'completion_tokens_details': {'accepted_prediction_tokens': None, 'audio_tokens': None, 'reasoning_tokens': 141, 'rejected_prediction_tokens': None
+        }, 'prompt_tokens_details': {'audio_tokens': None, 'cached_tokens': 256
+        }, 'queue_time': 0.060034764, 'prompt_time': 0.000279196, 'completion_time': 0.367200951, 'total_time': 0.367480147
+    }, 'model_provider': 'openai', 'model_name': 'openai/gpt-oss-120b', 'system_fingerprint': 'fp_8a618bed98', 'id': 'chatcmpl-455e0d60-959b-4642-b563-c0c4bb3485b3', 'service_tier': 'on_demand', 'finish_reason': 'stop', 'logprobs': None
+} id='lc_run--019b6820-0019-7f40-9550-04f871b1b391-0' usage_metadata={'input_tokens': 263, 'output_tokens': 177, 'total_tokens': 440, 'input_token_details': {'cache_read': 256
+    }, 'output_token_details': {'reasoning': 141
+    }
+}
