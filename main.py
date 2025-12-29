@@ -1,4 +1,4 @@
-from agent import Agent
+from scratch_agent_noframework import Agent
 from tools import web_search, get_current_weather, calculator
 from memory import ShortTermMemory
 from rag import RAGSystem
