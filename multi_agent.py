@@ -1,8 +1,6 @@
-from langchain.agents import create_agent
-from tools import web_search, get_current_weather, calculator
+from tools import perform_search, fetch_weather, execute_math
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
-from pydantic import BaseModel, Field
 import os
 import re
 from dotenv import load_dotenv
@@ -12,160 +10,115 @@ from langgraph.graph import StateGraph, START, END
 from typing import Literal, Annotated, Union, Any, cast
 from langgraph.types import Command
 from langgraph.graph.message import add_messages
-from langchain_core.output_parsers import JsonOutputParser
 import json
-from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import HumanMessage
-from langchain_core.runnables import RunnableConfig
+from langchain.agents import create_agent
 
 
 checkpointer = InMemorySaver()
-config: RunnableConfig = {"configurable": {"thread_id": "1"}}
 model = ChatOpenAI(base_url=os.getenv("BASE_URL"), api_key=os.getenv("GROQ_API_KEY", ""), model=os.getenv("MODEL_NAME", "gpt-4o"))
 
 
-class ResponseFormat(BaseModel):
-    content: str = Field(..., description="The content/answer or reasoning")
-    next_agent: Literal["supervisor", "search_agent", "weather_agent", "calculator_agent", "END"] = Field(..., description="The next agent to handle the response")
+# Agent configuration for easy management and scaling
+# Renamed to experts to avoid confusion with tool names
+AGENT_ROLES = {
+    "research_expert": "searching for historical facts, average temperatures, and general research information",
+    "weather_expert": "fetching current real-time weather data, temperature, and wind speed",
+    "math_expert": "performing mathematical calculations and comparing numerical values",
+}
 
-parser = JsonOutputParser(pydantic_object=ResponseFormat)
-format_prompt = parser.get_format_instructions()
-
-def parse_cleaned_json(text: str):
-    # Remove <think> blocks
-    cleaned_text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
-    return parser.parse(cleaned_text)
-
-def supervisor_agent(state: MessagesState) -> Command[Literal["search_agent","weather_agent","calculator_agent", "__end__" ]]:
-    agent = create_agent(
-        model=model,
-        checkpointer=checkpointer,
-        system_prompt=(
-            "You are a supervisor agent. Your job is to decide which specialized agent should handle the next part of the user request. "
-            "Specialized agents: search_agent, weather_agent, calculator_agent. "
-            "If the task is complete, return 'END' as the next_agent. "
-            f"\n\nCRITICAL: You MUST respond ONLY with a JSON object in this format:\n{format_prompt}"
-        )
+def supervisor_agent(state: MessagesState) -> Command[Literal["research_expert","weather_expert","math_expert", "__end__" ]]:
+    # Dynamically build the prompt from AGENT_ROLES
+    agent_descriptions = "\n".join([f"- {name}: Delegate to this expert for {desc}." for name, desc in AGENT_ROLES.items()])
+    next_agent_options = list(AGENT_ROLES.keys()) + ["END"]
+    
+    system_prompt = (
+        "You are a supervisor agent (Coordinator). You DO NOT have any tools and CANNOT perform tasks yourself.\n"
+        "Your ONLY job is to delegate tasks to the following specialized experts ONE BY ONE:\n\n"
+        f"{agent_descriptions}\n\n"
+        "CRITICAL RULES:\n"
+        "1. NEVER attempt to call a tool or function directly. You do not have access to them.\n"
+        "2. NEVER use your internal knowledge to provide facts or perform calculations.\n"
+        "3. You MUST respond ONLY with a raw JSON object. No other text, no markdown blocks, no 'think' tags.\n"
+        f"4. The JSON format MUST be: {{\"next_agent\": \"one of {next_agent_options}\", \"content\": \"your reasoning or final answer\"}}\n\n"
+        "Instructions:\n"
+        "- Review the conversation history to see what has been done.\n"
+        "- If more information is needed, set 'next_agent' to the appropriate expert.\n"
+        "- If all tasks are completed, provide the final summary in 'content' and set 'next_agent' to 'END'."
     )
-    response = agent.invoke(
-        {"messages": state["messages"]},
-        config=config)
     
+    agent = create_agent(model=model, system_prompt=system_prompt)
+    response = agent.invoke({"messages": state["messages"]})
     last_message = response['messages'][-1]
-    response_data = parse_cleaned_json(last_message.content)
     
-    goto = response_data['next_agent']
+    try:
+        # Robust JSON parsing
+        cleaned_text = re.sub(r'<think>.*?</think>', '', last_message.content, flags=re.DOTALL).strip()
+        json_match = re.search(r'(\{.*\})', cleaned_text, re.DOTALL)
+        response_data = json.loads(json_match.group(1)) if json_match else json.loads(cleaned_text)
+        goto = response_data.get('next_agent', 'END')
+    except Exception:
+        goto = "END"
+
     if goto == "END":
         goto = END
-        
-    return Command(
-        goto=cast(Any, goto),
-        update={"messages": response['messages'][len(state['messages']):]}
-    )
+    return Command(goto=cast(Any, goto), update={"messages": response['messages'][len(state['messages']):]})
 
-
-def search_agent(state: MessagesState) -> Command[Literal["supervisor","weather_agent","calculator_agent", "__end__" ]]:
+def research_expert(state: MessagesState) -> Command[Literal["supervisor"]]:
     agent = create_agent(
         model=model,
-        checkpointer=checkpointer,
-        system_prompt=(
-            "You are a web search agent. Use the tool to perform web searches. "
-            "After getting results, summarize them and decide the next agent. "
-            f"\n\nCRITICAL: You MUST respond ONLY with a JSON object in this format after your tool use:\n{format_prompt}"
-        ),
-        tools=[web_search]
+        system_prompt="You are a research expert. Use the 'perform_search' tool to find accurate information as requested by the supervisor.",
+        tools=[perform_search]
     )
-    response = agent.invoke(
-        {"messages": state["messages"]},config=config
-    )
-    
-    last_message = response['messages'][-1]
-    response_data = parse_cleaned_json(last_message.content)
-    
-    goto = response_data['next_agent']
-    if goto == "END":
-        goto = END
+    response = agent.invoke({"messages": state["messages"]})
+    return Command(goto="supervisor", update={"messages": response['messages'][len(state['messages']):]})
 
-    return Command(
-        goto=cast(Any, goto),
-        update={"messages": response['messages'][len(state['messages']):]}
-    )
-
-
-def weather_agent(state: MessagesState) -> Command[Literal["supervisor","search_agent","calculator_agent", "__end__" ]]:
+def weather_expert(state: MessagesState) -> Command[Literal["supervisor"]]:
     agent = create_agent(
         model=model,
-        checkpointer=checkpointer,
-        system_prompt=(
-            "You are a weather agent. Use the tool to provide current weather. "
-            f"\n\nCRITICAL: You MUST respond ONLY with a JSON object in this format after your tool use:\n{format_prompt}"
-        ),
-        tools=[get_current_weather]
+        system_prompt="You are a weather expert. Use the 'fetch_weather' tool to retrieve real-time data for locations requested by the supervisor.",
+        tools=[fetch_weather]
     )
-    response = agent.invoke(
-        {"messages": state["messages"]},config=config
-    )
-    
-    last_message = response['messages'][-1]
-    response_data = parse_cleaned_json(last_message.content)
-    
-    goto = response_data['next_agent']
-    if goto == "END":
-        goto = END
+    response = agent.invoke({"messages": state["messages"]})
+    return Command(goto="supervisor", update={"messages": response['messages'][len(state['messages']):]})
 
-    return Command(
-        goto=cast(Any, goto),
-        update={"messages": response['messages'][len(state['messages']):]}
-    )
-
-def calculator_agent(state: MessagesState) -> Command[Literal["supervisor","search_agent","weather_agent", "__end__" ]]:
+def math_expert(state: MessagesState) -> Command[Literal["supervisor"]]:
     agent = create_agent(
         model=model,
-        checkpointer=checkpointer,
-        system_prompt=(
-            "You are a calculator agent. Use the tool to perform math. "
-            f"\n\nCRITICAL: You MUST respond ONLY with a JSON object in this format after your tool use:\n{format_prompt}"
-        ),
-        tools=[calculator]
+        system_prompt="You are a math expert. Use the 'execute_math' tool to perform precise mathematical operations as requested by the supervisor.",
+        tools=[execute_math]
     )
-    response = agent.invoke(
-        {"messages": state["messages"]},config=config
-    )
-    
-    last_message = response['messages'][-1]
-    response_data = parse_cleaned_json(last_message.content)
-    
-    goto = response_data['next_agent']
-    if goto == "END":
-        goto = END
+    response = agent.invoke({"messages": state["messages"]})
+    return Command(goto="supervisor", update={"messages": response['messages'][len(state['messages']):]})
 
-    return Command(
-        goto=cast(Any, goto),
-        update={"messages": response['messages'][len(state['messages']):]}
-    )
 
 
 builder = StateGraph(MessagesState)
 builder.add_node('supervisor',supervisor_agent)
-builder.add_node('search_agent', search_agent)
-builder.add_node('weather_agent', weather_agent)
-builder.add_node('calculator_agent', calculator_agent)
+builder.add_node('research_expert', research_expert)
+builder.add_node('weather_expert', weather_expert)
+builder.add_node('math_expert', math_expert)
 builder.add_edge(START, 'supervisor')
 
 
-graph = builder.compile()
+graph = builder.compile(checkpointer=checkpointer)
 
 if __name__ == "__main__":
     user_query = (
-        "I need a comprehensive climate and tourism analysis for Da Lat. "
-        "First, search the historical average temperatures for each of the four seasons from the knowledge base. "
-        "Second, get the current real-time temperature and wind speed for Da Lat. "
-        "Third, for each season, calculate the difference between the historical average and the current temperature. "
-        "Fourth, search for three distinct, specific historical facts about the Da Lat Flower Festival's origin. "
-        "Fifth, search for current visitor guidelines and ticket prices for the upcoming festival. "
-        "Sixth, calculate the total estimated cost for a group of 5 people based on those ticket prices. "
-        "Finally, provide a summary comparing the current weather to the best season for visiting, including the festival facts and total cost."
+        "Process the following request step-by-step:\n"
+        "1. Fetch the current weather in Da Lat.\n"
+        "2. Find the historical average temperature in Da Lat for December.\n"
+        "3. Calculate the difference between the current temperature and that historical average."
     )
-    messages = graph.invoke({"messages": [HumanMessage(content=user_query)]})
-    for m in messages['messages']:
-        m.pretty_print()
+    
+    main_config = {"configurable": {"thread_id": "main_conversation"}}
+    
+    print("Starting graph execution...")
+    try:
+        for chunk in graph.stream({"messages": [HumanMessage(content=user_query)]}, config=main_config, stream_mode="values"):
+            if "messages" in chunk:
+                last_message = chunk["messages"][-1]
+                if not isinstance(last_message, HumanMessage):
+                    last_message.pretty_print()
+    except Exception as e:
+        print(f"Error during execution: {e}")

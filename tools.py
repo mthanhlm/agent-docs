@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def web_search(query: str):
+def perform_search(query: str):
     """
     Search for up-to-date information on the web.
     This tool returns a comprehensive summary of search results including titles, snippets, and source URLs.
@@ -43,7 +43,7 @@ def web_search(query: str):
     except Exception as e:
         return f"Web search error: {str(e)}"
 
-def get_current_weather(location: str):
+def fetch_weather(location: str):
     """
     Get the current weather information for a specified location.
     The tool first resolves the location to coordinates and then fetches real-time weather data.
@@ -72,7 +72,7 @@ def get_current_weather(location: str):
         return f"Error: {str(e)}"
 
 
-def calculator(expression: str):
+def execute_math(expression: str):
     """
     Evaluate a mathematical expression safely.
     Supports basic arithmetic operations: addition (+), subtraction (-), multiplication (*), division (/), and parentheses.
