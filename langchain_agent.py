@@ -1,19 +1,27 @@
-from langchain.agents import create_agent
-from tools import web_search, get_current_weather, calculator
-from langchain_openai import ChatOpenAI
-from langgraph.checkpoint.memory import InMemorySaver
+"""LangChain-based agent with tool support for search, weather, and calculations."""
+
 import os
 from dotenv import load_dotenv
+from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import InMemorySaver
+from tools import perform_search, fetch_weather, execute_math
+
 load_dotenv()
 
 checkpointer = InMemorySaver()
 config = {"configurable": {"thread_id": "1"}}
-model = ChatOpenAI(base_url=os.getenv("BASE_URL"), api_key=os.getenv("GROQ_API_KEY"), model=os.getenv("MODEL_NAME", "gpt-4o"))
+
+model = ChatOpenAI(
+    base_url=os.getenv("BASE_URL"),
+    api_key=os.getenv("GROQ_API_KEY"),
+    model=os.getenv("MODEL_NAME", "gpt-4o")
+)
 
 agent = create_agent(
     model=model,
-    tools=[web_search, calculator, get_current_weather],
-    system_prompt="You are a helpful AI assistant. Always use context from Knowledge Base (RAG) and available tools to answer precisely. Answer in short all needed information",
+    tools=[perform_search, execute_math, fetch_weather],
+    system_prompt="You are a helpful AI assistant. Use available tools to answer precisely and concisely.",
     checkpointer=checkpointer,
 )
 
@@ -28,6 +36,7 @@ if __name__ == "__main__":
 
     agent_response = None
     debug = False
+    
     for chunk in agent.stream(  
         {"messages": [{"role": "user", "content": user_query}]},
         stream_mode="updates",
@@ -40,5 +49,3 @@ if __name__ == "__main__":
             agent_response = data['messages'][-1].content_blocks
 
     print(f"\nFinal Answer:\n\n {agent_response[0]['text']}")
-
-
